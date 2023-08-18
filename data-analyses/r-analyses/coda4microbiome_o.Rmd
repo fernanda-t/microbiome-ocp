@@ -1,0 +1,639 @@
+---
+title: "coda4microbiome -- NO OUTLIERS"
+author: "Fernanda Terrazas"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+Set working directory
+```{r}
+# setwd("~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses")
+
+```
+Load coda4microbiome package
+```{r Load Packages}
+library(coda4microbiome)
+
+```
+
+```{r}
+# to reproduce the results
+set.seed(123)
+
+```
+# 4. coda4microbiome - Treatment and Diet (binary outcome)
+## 4.1 Control vs. OC Users
+Assign "group" with metadata subset
+
+**EXCLUDE H2 & CH4 OUTLIERS FROM MODELS**
+```{r group}
+remove_outliers <- c("950N", "950N2", "962P", "962P2", "921C", "921C2", "735P", "735P2") #  "989N", "737P"
+group <- group_control_oc[!(group_control_oc$SampleID %in% remove_outliers),]
+
+```
+
+```{r}
+# transpose asv/species/genus table -- use species for original names, species_c4m for simplified names
+# x_species_cu_o <- data.frame(t(species_c4m), check.names = T)
+x_species_cu_o <- data.frame(t(species), check.names = T)
+
+# subset asv/species/genus data to keep subgroup data
+x_species_cu_o <- x_species_cu_o[row.names(x_species_cu_o) %in% group$SampleID, ]
+
+# Use group metadata subset to save Treatment column as a factor
+y_treatment_cu_o <- as.factor(group$Treatment)
+y_treatment_cu_o
+
+```
+
+```{r}
+# identification of microbial signatures between Treatments (C and N, or N and P)
+coda_glmnet_cu_o <- coda_glmnet(x=x_species_cu_o, y=y_treatment_cu_o, nfolds = 6, lambda = "lambda.min")
+coda_glmnet_cu_o$`apparent AUC`
+coda_glmnet_cu_o
+
+# permutational test? 
+# coda_glmnet_perm_cu_o <- coda_glmnet_null(x=x_species_cu_o, y=y_treatment_cu_o, niter = 100)
+# coda_glmnet_perm_cu_o
+
+```
+Extract glmnet results and add to new data frame
+```{r}
+keep_elem <- c(1, 2, 3, 5, 6, 7) # keep elements containing taxa numbers, names, log and AUC values, etc
+coda_list_cu_o <- list(coda_glmnet_cu_o[keep_elem])
+coda_df_cu_o <- do.call(cbind.data.frame, coda_list_cu_o)
+View(coda_df_cu_o)
+
+```
+Save coda_glmnet results as .csv file
+```{r}
+write.csv(coda_df_cu_o, "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/coda4microbiome/coda-glmnet_results_cu_o.csv", row.names = FALSE)
+
+```
+Plot selected taxa and their estimated regression coefficients manually 
+```{r}
+# library(cowplot)
+
+# Create a new data frame to create the plot
+coeff_df_cu_o <- data.frame(
+  taxa = coda_glmnet_cu_o$taxa.name,
+  # short_taxa = short_taxa_meth,
+  coeff = coda_glmnet_cu_o$`log-contrast coefficients`
+)
+
+####
+#### simplify names
+####
+
+# # Assuming your data is in a data frame called 'data'
+# coeff_df_cu_o <- data.frame(coeff_df_cu_o %>%
+#   group_by(Species) %>%
+#   summarise(coeff = sum(coeff)))
+
+# Add a column indicating whether log_contrast is positive or negative
+coeff_df_cu_o$sign <- ifelse(coeff_df_cu_o$coeff > 0, "positive", "negative")
+
+coeff_df_cu_o_cutoff <- coeff_df_cu_o[coeff_df_cu_o$coeff > 0.05 | coeff_df_cu_o$coeff < -0.05,]
+
+# Find the maximum absolute coefficient value
+max_abs_coeff_cu_o <- max(abs(c(min(coeff_df_cu_o_cutoff$coeff), max(coeff_df_cu_o_cutoff$coeff))))
+
+# Create the plot with short_taxa on the y-axis, log_contrast on the x-axis, and fill based on sign
+p_coda_glmnet_cu_o <- ggplot(coeff_df_cu_o_cutoff, aes(x = coeff, y = reorder(Species, coeff), fill = sign)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("#E6A316","#E066A6","#332288","#256769")) +
+  scale_x_continuous(limits = c(-max_abs_coeff_cu_o, max_abs_coeff_cu_o)) +
+  #geom_text(aes(label = round(coeff, 2)), hjust = -0.1, size = 3) +
+  #theme(axis.text.y = element_text(hjust = 1)) +
+  labs(x = "Log-contrast coefficient", y = "Taxa", title = "") +
+  theme_classic() +
+  theme(legend.position = "none")
+p_coda_glmnet_cu_o
+
+```
+Create predictions plot
+```{r}
+# Prepare the data
+predictions_cu_o <- data.frame(Value = coda_glmnet_cu_o$predictions)
+predictions_cu_o$Group <- ifelse(predictions_cu_o$Value > 0, 'User', 'Control')
+
+# Find the maximum absolute value
+max_abs_value_cu_o_pred <- max(abs(c(min(predictions_cu_o$Value[predictions_cu_o$Group == "Control"]), max(predictions_cu_o$Value[predictions_cu_o$Group == "User"]))))
+
+# # Plot the data and set the y-axis limits to be symmetrical around zero
+p_predictions_cu_o <- ggplot(predictions_cu_o, aes(x = Group, y = Value, fill = Group)) +
+  geom_boxplot(colour = "black") +
+  coord_flip() +
+  scale_fill_manual(values = c("#E6A316","#E066A6","#332288","#256769")) +
+  scale_y_continuous(limits = c(-max_abs_value_cu_o_pred, max_abs_value_cu_o_pred)) +
+  theme_minimal() +
+  labs(title = " ",
+       x = "",
+       y = "Balance value") +
+  theme_classic() +
+  theme(legend.position = "none")
+p_predictions_cu_o
+
+```
+Combine 
+```{r}
+p_coda_glmnet_plots_cu_o <- egg::ggarrange(p_coda_glmnet_cu_o, p_predictions_cu_o, labels = c("", ""), 
+                         ncol = 1, nrow = 2, heights = c(1,0.25))
+as_ggplot(p_coda_glmnet_plots_cu_o)
+ 
+```
+Save plots as .png images
+```{r}
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/coda4microbiome/signature-plot_cu_o.png", plot = p_coda_glmnet_cu_o, width = 6, height = 7, dpi = 300)
+
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/coda4microbiome/sig_pred-plots_cu_o.png", plot = p_coda_glmnet_plots_cu_o, width = 6, height = 4, dpi = 300) 
+
+```
+## 4.2 Prune vs. No Prune
+Assign "group" with metadata subset
+
+**EXCLUDE H2 & CH4 OUTLIERS FROM MODELS**
+```{r group}
+group <- group_prune_no.prune[!(group_prune_no.prune$SampleID %in% remove_outliers),]
+
+```
+
+```{r}
+# transpose asv/species/genus table -- use species for original names, species_c4m for simplified names
+# x_species_pnp_o <- data.frame(t(species_c4m), check.names = T)
+x_species_pnp_o <- data.frame(t(species), check.names = T)
+
+# subset asv/species/genus data to keep subgroup data
+x_species_pnp_o <- x_species_pnp_o[row.names(x_species_pnp_o) %in% group$SampleID, ]
+
+# Use group metadata subset to save Treatment column as a factor
+y_treatment_pnp_o <- as.factor(group$Diet)
+y_treatment_pnp_o
+
+```
+
+```{r}
+# identification of microbial signatures between Treatments (C and N, or N and P)
+coda_glmnet_pnp_o <- coda_glmnet(x=x_species_pnp_o, y=y_treatment_pnp_o, nfolds = 6, lambda = "lambda.min")
+coda_glmnet_pnp$`apparent AUC`
+
+# permutational test? 
+# coda_glmnet_perm_pnp_o <- coda_glmnet_null(x=x_species_pnp_o, y=y_treatment_pnp_o, niter = 100)
+# coda_glmnet_perm_pnp_o
+
+```
+Extract glmnet results and add to new data frame
+```{r}
+keep_elem <- c(1, 2, 3, 5, 6, 7) # keep elements containing taxa numbers, names, log and AUC values, etc
+coda_list_pnp_o <- list(coda_glmnet_pnp_o[keep_elem])
+coda_df_pnp_o <- do.call(cbind.data.frame, coda_list_pnp_o)
+View(coda_df_pnp_o)
+
+```
+Save coda_glmnet results as .csv file
+```{r}
+write.csv(coda_df_pnp_o, "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/coda4microbiome/coda-glmnet_results_pnp_o.csv", row.names = FALSE)
+
+```
+Plot selected taxa and their estimated regression coefficients manually 
+```{r}
+# Create a new data frame to create the plot
+coeff_df_pnp_o <- data.frame(
+  taxa = coda_glmnet_pnp_o$taxa.name,
+  # short_taxa = short_taxa_meth,
+  coeff = coda_glmnet_pnp_o$`log-contrast coefficients`
+)
+
+####
+#### simplify names
+####
+
+# # Assuming your data is in a data frame called 'data'
+# coeff_df_pnp_o <- data.frame(coeff_df_pnp_o %>%
+#   group_by(Species) %>%
+#   summarise(coeff = sum(coeff)))
+
+# Add a column indicating whether log_contrast is positive or negative
+coeff_df_pnp_o$sign <- ifelse(coeff_df_pnp_o$coeff > 0, "positive", "negative")
+
+coeff_df_pnp_o_cutoff <- coeff_df_pnp_o[coeff_df_pnp_o$coeff > 0.05 | coeff_df_pnp_o$coeff < -0.05,]
+
+# Find the maximum absolute coefficient value
+max_abs_coeff_pnp_o <- max(abs(c(min(coeff_df_pnp_o_cutoff$coeff), max(coeff_df_pnp_o_cutoff$coeff))))
+
+# Create the plot with short_taxa on the y-axis, log_contrast on the x-axis, and fill based on sign
+p_coda_glmnet_pnp_o <- ggplot(coeff_df_pnp_o_cutoff, aes(x = coeff, y = reorder(Species, coeff), fill = sign)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("#E066A6","#332288","#E6A316","#256769")) +
+  scale_x_continuous(limits = c(-max_abs_coeff_pnp_o, max_abs_coeff_pnp_o)) +
+  #geom_text(aes(label = round(coeff, 2)), hjust = -0.1, size = 3) +
+  #theme(axis.text.y = element_text(hjust = 1)) +
+  labs(x = "Log-contrast coefficient", y = "Taxa", title = "") +
+  theme_classic() +
+  theme(legend.position = "none")
+p_coda_glmnet_pnp_o
+
+```
+Create predictions plot
+```{r}
+# Prepare the data
+predictions_pnp_o <- data.frame(Value = coda_glmnet_pnp_o$predictions)
+predictions_pnp_o$Group <- ifelse(predictions_pnp_o$Value > 0, 'Prune', 'No Prune')
+
+# Find the maximum absolute value
+max_abs_value_pnp_o_pred <- max(abs(c(min(predictions_pnp_o$Value[predictions_pnp_o$Group == "No Prune"]), max(predictions_pnp_o$Value[predictions_pnp_o$Group == "Prune"]))))
+
+# # Plot the data and set the y-axis limits to be symmetrical around zero
+p_predictions_pnp_o <- ggplot(predictions_pnp_o, aes(x = Group, y = Value, fill = Group)) +
+  geom_boxplot(colour = "black") +
+  coord_flip() +
+  scale_fill_manual(values = c("#E066A6","#332288","#E6A316","#256769")) +
+  scale_y_continuous(limits = c(-max_abs_value_pnp_o_pred, max_abs_value_pnp_o_pred)) +
+  theme_minimal() +
+  labs(title = " ",
+       x = "",
+       y = "Balance value") +
+  theme_classic() +
+  theme(legend.position = "none")
+p_predictions_pnp_o
+
+```
+Combine 
+```{r}
+p_coda_glmnet_plots_pnp_o <- egg::ggarrange(p_coda_glmnet_pnp_o, p_predictions_pnp_o, labels = c("", ""), 
+                         ncol = 1, nrow = 2, heights = c(1,0.25))
+as_ggplot(p_coda_glmnet_plots_pnp_o)
+ 
+```
+Save plots as .png images
+```{r}
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/coda4microbiome/signature-plot_pnp_o.png", plot = p_coda_glmnet_pnp_o, width = 6, height = 7, dpi = 300)
+
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/coda4microbiome/sig_pred-plots_pnp_o.png", plot = p_coda_glmnet_plots_pnp_o, width = 6, height = 4, dpi = 300) 
+```
+# 5. coda4microbiome - CH4 & H2 signatures in Prune (continuous variables into binary outcome)
+Assign "group" with metadata subset
+```{r}
+group <- map[!(map$SampleID %in% remove_outliers),]
+
+```
+subset species data
+```{r}
+# neet to transpose asv/species/genus table for coda_glmnet()
+# x_species_p <- data.frame(t(species_c4m), check.names = T)
+x_species_p <- data.frame(t(species), check.names = T)
+
+# subset asv/species/genus data to keep subgroup data
+x_species_p <- x_species_p[row.names(x_species_p) %in% group$SampleID, ]
+
+```
+### Use group and complete.cases() to save CH4 and H2 columns that have data for all entries
+```{r}
+y_methane_p <- subset(group, complete.cases(CH4))
+y_methane_p$CH4 <- sqrt(y_methane_p$CH4)
+mean_CH4 <- mean(y_methane_p$CH4) # calculate the mean of CH4
+y_methane_p$b_CH4 <- ifelse(y_methane_p$CH4 > mean_CH4, "high", "low") # create a b_CH4 column with high/low values for CH4
+y_methane_pb <- y_methane_p$b_CH4
+x_species_meth_p <- x_species_p[row.names(x_species_p) %in% y_methane_p$SampleID, ]
+
+
+y_hydrogen_p <- subset(group, complete.cases(H2))
+y_hydrogen_p$H2 <- sqrt(y_hydrogen_p$H2)
+mean_H2 <- mean(y_hydrogen_p$H2) # calculate the mean of H2
+y_hydrogen_p$b_H2 <- ifelse(y_hydrogen_p$H2 > mean_H2, "high", "low") # create a b_H2 column with high/low values for H2
+y_hydrogen_pb <- y_hydrogen_p$b_H2
+x_species_hydro_p <- x_species_p[row.names(x_species_p) %in% y_hydrogen_p$SampleID, ]
+
+```
+
+```{r}
+# identification of microbial signatures
+coda_glmnet_meth_p <- coda_glmnet(x=x_species_meth_p, y=y_methane_pb, nfolds = 7, lambda = "lambda.min")
+coda_glmnet_meth_p$`apparent AUC`
+coda_glmnet_meth_p
+
+coda_glmnet_hydro_p <- coda_glmnet(x=x_species_hydro_p, y=y_hydrogen_pb, nfolds = 6, lambda = "lambda.min")
+coda_glmnet_hydro_p$`apparent AUC`
+coda_glmnet_hydro_p
+
+```
+Extract glmnet results and add to new data frame
+```{r}
+keep_elem <- c(1, 2, 3, 5, 6, 7) # keep elements containing taxa numbers, names, log and AUC values, etc
+coda_list_meth_p <- list(coda_glmnet_meth_p[keep_elem])
+coda_df_meth_p <- do.call(cbind.data.frame, coda_list_meth_p)
+View(coda_df_meth_p)
+
+keep_elem <- c(1, 2, 3, 5, 6, 7) # keep elements containing taxa numbers, names, log and AUC values, etc
+coda_list_hydro_p <- list(coda_glmnet_hydro_p[keep_elem])
+coda_df_hydro_p <- do.call(cbind.data.frame, coda_list_hydro_p)
+View(coda_df_hydro_p)
+
+```
+Save coda_glmnet results as .csv file
+```{r}
+write.csv(coda_df_meth_p, "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/coda4microbiome/glmnet-results_meth.csv", row.names = FALSE)
+
+write.csv(coda_df_hydro_p, "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/coda4microbiome/glmnet-results_hydro.csv", row.names = FALSE)
+
+```
+**CH4** -- Plot selected taxa and their estimated regression coefficients
+```{r}
+# library(cowplot)
+
+# Create a new data frame to create the plot
+coeff_df_meth_p <- data.frame(
+  taxa = coda_glmnet_meth_p$taxa.name,
+  # short_taxa = short_taxa_meth,
+  coeff = coda_glmnet_meth_p$`log-contrast coefficients`
+)
+
+####
+#### simplify names
+####
+
+# # Assuming your data is in a data frame called 'data'
+# coeff_df_meth_p <- data.frame(coeff_df_meth_p %>%
+#   group_by(Species) %>%
+#   summarise(coeff = sum(coeff)))
+
+# Add a column indicating whether log_contrast is positive or negative
+coeff_df_meth_p$sign <- ifelse(coeff_df_meth_p$coeff > 0, "positive", "negative")
+
+coeff_df_meth_p_cutoff <- coeff_df_meth_p[coeff_df_meth_p$coeff > 0.05 | coeff_df_meth_p$coeff < -0.05,]
+
+# Find the maximum absolute coefficient value
+max_abs_coeff_meth_p <- max(abs(c(min(coeff_df_meth_p_cutoff$coeff), max(coeff_df_meth_p_cutoff$coeff))))
+
+# Create the plot with short_taxa on the y-axis, log_contrast on the x-axis, and fill based on sign
+p_coda_glmnet_meth_p <- ggplot(coeff_df_meth_p_cutoff, aes(x = coeff, y = reorder(Species, coeff), fill = sign)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("#F8766D","#00BFC4","#7CAE00","#C77CFF")) +
+  scale_x_continuous(limits = c(-max_abs_coeff_meth_p, max_abs_coeff_meth_p)) +
+  #geom_text(aes(label = round(coeff, 2)), hjust = -0.1, size = 3) +
+  #theme(axis.text.y = element_text(hjust = 1)) +
+  labs(x = "Log-contrast coefficient", y = "Taxa", title = "") +
+  theme_classic() +
+  theme(legend.position = "none")
+p_coda_glmnet_meth_p
+
+```
+**CH4** -- Create predictions plot
+```{r}
+# Prepare the data
+predictions_meth_p <- data.frame(Value = coda_glmnet_meth_p$predictions)
+predictions_meth_p$Group <- ifelse(predictions_meth_p$Value > 0, 'Low CH4', 'High CH4')
+
+# Find the maximum absolute value
+max_abs_value_meth_p_pred <- max(abs(c(min(predictions_meth_p$Value[predictions_meth_p$Group == "High CH4"]), max(predictions_meth_p$Value[predictions_meth_p$Group == "Low CH4"]))))
+
+# # Plot the data and set the y-axis limits to be symmetrical around zero
+p_predictions_meth_p <- ggplot(predictions_meth_p, aes(x = Group, y = Value, fill = Group)) +
+  geom_boxplot(colour = "black") +
+  coord_flip() +
+  scale_fill_manual(values = c("#F8766D","#00BFC4","#7CAE00","#C77CFF")) +
+  scale_y_continuous(limits = c(-max_abs_value_meth_p_pred, max_abs_value_meth_p_pred)) +
+  theme_minimal() +
+  labs(title = " ",
+       x = "",
+       y = "Balance value") +
+  theme_classic() +
+  theme(legend.position = "none")
+p_predictions_meth_p
+
+```
+**CH4** -- Combine 
+```{r}
+p_coda_glmnet_plots_meth_p <- egg::ggarrange(p_coda_glmnet_meth_p, p_predictions_meth_p, labels = c("", ""), 
+                         ncol = 1, nrow = 2, heights = c(1,0.25))
+as_ggplot(p_coda_glmnet_plots_meth_p)
+ 
+```
+**CH4** -- Save plots as .png images
+```{r}
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/coda4microbiome/signature-plot_meth_p.png", plot = p_coda_glmnet_meth_p, width = 6, height = 7, dpi = 300)
+
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/coda4microbiome/sig_pred-plots_meth_p.png", plot = p_coda_glmnet_plots_meth_p, width = 6, height = 4, dpi = 300) 
+
+```
+**H2** -- Plot selected taxa and their estimated regression coefficients
+```{r}
+# Create a new data frame to create the plot
+coeff_df_hydro_p <- data.frame(
+  taxa = coda_glmnet_hydro_p$taxa.name,
+  # short_taxa = short_taxa_meth,
+  coeff = coda_glmnet_hydro_p$`log-contrast coefficients`
+)
+
+####
+#### simplify names
+####
+
+# # Assuming your data is in a data frame called 'data'
+# coeff_df_hydro_p <- data.frame(coeff_df_hydro_p %>%
+#   group_by(Species) %>%
+#   summarise(coeff = sum(coeff)))
+
+# Add a column indicating whether log_contrast is positive or negative
+coeff_df_hydro_p$sign <- ifelse(coeff_df_hydro_p$coeff > 0, "positive", "negative")
+
+coeff_df_hydro_p_cutoff <- coeff_df_hydro_p[coeff_df_hydro_p$coeff > 0.05 | coeff_df_hydro_p$coeff < -0.05,]
+
+# Find the maximum absolute coefficient value
+max_abs_coeff_hydro_p <- max(abs(c(min(coeff_df_hydro_p_cutoff$coeff), max(coeff_df_hydro_p_cutoff$coeff))))
+
+# Create the plot with short_taxa on the y-axis, log_contrast on the x-axis, and fill based on sign
+p_coda_glmnet_hydro_p <- ggplot(coeff_df_hydro_p_cutoff, aes(x = coeff, y = reorder(Species, coeff), fill = sign)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("#F8766D","#00BFC4","#7CAE00","#C77CFF")) +
+  scale_x_continuous(limits = c(-max_abs_coeff_hydro_p, max_abs_coeff_hydro_p)) +
+  #geom_text(aes(label = round(coeff, 2)), hjust = -0.1, size = 3) +
+  #theme(axis.text.y = element_text(hjust = 1)) +
+  labs(x = "Log-contrast coefficient", y = "Taxa", title = "") +
+  theme_classic() +
+  theme(legend.position = "none")
+p_coda_glmnet_hydro_p
+
+```
+Create predictions plot
+```{r}
+# Prepare the data
+predictions_hydro_p <- data.frame(Value = coda_glmnet_hydro_p$predictions)
+predictions_hydro_p$Group <- ifelse(predictions_hydro_p$Value > 0, 'Low H2', 'High H2')
+
+# Find the maximum absolute value
+max_abs_value_hydro_p_pred <- max(abs(c(min(predictions_hydro_p$Value[predictions_hydro_p$Group == "High H2"]), max(predictions_hydro_p$Value[predictions_hydro_p$Group == "Low H2"]))))
+
+# # Plot the data and set the y-axis limits to be symmetrical around zero
+p_predictions_hydro_p <- ggplot(predictions_hydro_p, aes(x = Group, y = Value, fill = Group)) +
+  geom_boxplot(colour = "black") +
+  coord_flip() +
+  scale_fill_manual(values = c("#F8766D","#00BFC4","#7CAE00","#C77CFF")) +
+  scale_y_continuous(limits = c(-max_abs_value_hydro_p_pred, max_abs_value_hydro_p_pred)) +
+  theme_minimal() +
+  labs(title = " ",
+       x = "",
+       y = "Balance value") +
+  theme_classic() +
+  theme(legend.position = "none")
+p_predictions_hydro_p
+
+```
+**H2** -- Combine 
+```{r}
+p_coda_glmnet_plots_hydro_p <- egg::ggarrange(p_coda_glmnet_hydro_p, p_predictions_hydro_p, labels = c("", ""), 
+                         ncol = 1, nrow = 2, heights = c(1,0.25))
+as_ggplot(p_coda_glmnet_plots_hydro_p)
+ 
+```
+**H2** -- Save plots as .png images
+```{r}
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/coda4microbiome/signature-plot_hydro_p.png", plot = p_coda_glmnet_hydro_p, width = 6, height = 7, dpi = 300)
+
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/coda4microbiome/sig_pred-plots_hydro_p.png", plot = p_coda_glmnet_plots_hydro_p, width = 6, height = 4, dpi = 300) 
+
+```
+**Outliers** -- look at CH4 and H2 outliers against all of the data
+Assign "group" with metadata subset
+```{r}
+hydro_meth_put <- map
+hydro_meth_put <- hydro_meth_put[complete.cases(hydro_meth_put),]
+
+```
+
+```{r}
+# Create new column 'Range' based on 'SampleID'
+hydro_meth_put$Range <- ifelse(hydro_meth_put$SampleID %in% c("950N", "950N2", "962P", "962P2", "921C", "921C2", "735P", "735P2"),
+                              "Extreme", # "989N", "737P"
+                              "Normal")
+
+```
+Subset species data
+```{r}
+# transpose asv/species/genus table for coda_glmnet() -- use species for original names, species_c4m for simplified names
+# x_species_o <- data.frame(t(species_c4m), check.names = T) # simplified names
+x_species_o <- data.frame(t(species), check.names = T) # original names
+
+# subset asv/species/genus data to keep subgroup data
+x_species_o <- x_species_o[row.names(x_species_o) %in% hydro_meth_put$SampleID, ]
+
+y_range_o <- as.factor(hydro_meth_put$Range)
+y_range_o
+
+```
+
+```{r}
+# identification of microbial signatures
+coda_glmnet_o <- coda_glmnet(x=x_species_o, y=y_range_o, nfolds = 3, lambda = "lambda.min")
+coda_glmnet_o$`apparent AUC`
+coda_glmnet_o
+
+```
+Extract glmnet results and add to new data frame
+```{r}
+keep_elem <- c(1, 2, 3, 5, 6, 7) # keep elements containing taxa numbers, names, log and AUC values, etc
+coda_list_o <- list(coda_glmnet_o[keep_elem])
+coda_df_o <- do.call(cbind.data.frame, coda_list_o)
+View(coda_df_o)
+
+```
+Save coda_glmnet results as .csv file
+```{r}
+write.csv(coda_df_o, "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/coda4microbiome/glmnet-results_outliers.csv", row.names = FALSE)
+
+```
+**Outliers** -- Plot selected taxa and their estimated regression coefficients
+```{r}
+# Create a new data frame to create the plot
+coeff_df_out_nor <- data.frame(
+  taxa = coda_glmnet_o$taxa.name,
+  # short_taxa = short_taxa_meth,
+  coeff = coda_glmnet_o$`log-contrast coefficients`
+)
+
+####
+#### simplify names
+####
+
+# Assuming your data is in a data frame called 'data'
+coeff_df_out_nor <- data.frame(coeff_df_out_nor %>%
+  group_by(Species) %>%
+  summarise(coeff = sum(coeff)))
+
+# Add a column indicating whether log_contrast is positive or negative
+coeff_df_out_nor$sign <- ifelse(coeff_df_out_nor$coeff > 0, "positive", "negative")
+
+coeff_df_out_nor_cutoff <- coeff_df_out_nor[coeff_df_out_nor$coeff > 0.05 | coeff_df_out_nor$coeff < -0.05,]
+
+# Find the maximum absolute coefficient value
+max_abs_coeff_out_nor <- max(abs(c(min(coeff_df_out_nor_cutoff$coeff), max(coeff_df_out_nor_cutoff$coeff))))
+
+# Create the plot with short_taxa on the y-axis, log_contrast on the x-axis, and fill based on sign
+p_coda_glmnet_out_nor <- ggplot(coeff_df_out_nor_cutoff, aes(x = coeff, y = reorder(Species, coeff), fill = sign)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("#C77CFF","#7CAE00","#F8766D","#00BFC4")) +
+  scale_x_continuous(limits = c(-max_abs_coeff_out_nor, max_abs_coeff_out_nor)) +
+  #geom_text(aes(label = round(coeff, 2)), hjust = -0.1, size = 3) +
+  #theme(axis.text.y = element_text(hjust = 1)) +
+  labs(x = "Log-contrast coefficient", y = "Taxa", title = "") +
+  theme_classic() +
+  theme(legend.position = "none")
+p_coda_glmnet_out_nor
+
+```
+**Outliers** -- Create predictions plot
+```{r}
+coda_glmnet_o
+
+# Prepare the data
+predictions_out_nor <- data.frame(Value = coda_glmnet_o$predictions)
+predictions_out_nor$Group <- ifelse(predictions_out_nor$Value > 0, 'Normal', 'Outlier')
+
+# Find the maximum absolute value
+max_abs_value_out_nor_pred <- max(abs(c(min(predictions_out_nor$Value[predictions_out_nor$Group == "Outlier"]), max(predictions_out_nor$Value[predictions_out_nor$Group == "Normal"]))))
+
+# # Plot the data and set the y-axis limits to be symmetrical around zero
+p_predictions_out_nor <- ggplot(predictions_out_nor, aes(x = Group, y = Value, fill = Group)) +
+  geom_boxplot(colour = "black") +
+  coord_flip() +
+  scale_fill_manual(values = c("#7CAE00","#C77CFF","#F8766D","#00BFC4")) +
+  scale_y_continuous(limits = c(-max_abs_value_out_nor_pred, max_abs_value_out_nor_pred)) +
+  theme_minimal() +
+  labs(title = " ",
+       x = "",
+       y = "Balance value") +
+  theme_classic() +
+  theme(legend.position = "none")
+p_predictions_out_nor
+
+```
+**Outliers** -- Combine 
+```{r}
+p_coda_glmnet_plots_out_nor <- egg::ggarrange(p_coda_glmnet_out_nor, p_predictions_out_nor, labels = c("", ""), 
+                         ncol = 1, nrow = 2, heights = c(1,0.25))
+as_ggplot(p_coda_glmnet_plots_out_nor)
+
+# COMBINE ALL 
+library(cowplot)
+p_coda_glmnet_plots_panel <- plot_grid(p_coda_glmnet_plots_cu_o,
+                                       p_coda_glmnet_plots_pnp_o,
+                                       p_coda_glmnet_plots_hydro_p,
+                                       p_coda_glmnet_plots_meth_p,
+                                       p_coda_glmnet_plots_out_nor,
+                                       labels = c("A", "B", "C", "D", "E"),
+                                       ncol = 1)
+p_coda_glmnet_plots_panel
+
+```
+**Outliers** -- Save plots as .png images
+```{r}
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/coda4microbiome/signature-plot_out_nor.png", plot = p_coda_glmnet_out_nor, width = 6, height = 7, dpi = 300)
+
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/coda4microbiome/sig_pred-plots_out_nor.png", plot = p_coda_glmnet_plots_out_nor, width = 6, height = 4, dpi = 300) 
+
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/coda4microbiome/sig_pred-plots_panel.png", plot = p_coda_glmnet_plots_panel, width = 6, height = 10, dpi = 300) 
+
+```

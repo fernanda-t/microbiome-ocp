@@ -1,0 +1,363 @@
+---
+title: "Microbiome OCP - Alpha Diversity"
+author: "Fernanda Terrazas"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(123)
+
+```
+# 2. Alpha Diversity
+## 2.1 log-transform alpha diversity metrics
+```{r}
+alpha_diversity_tx <- alpha_diversity
+head(alpha_diversity_tx)
+alpha_diversity_tx[, 2:5] <- sqrt(alpha_diversity_tx[, 2:5])
+head(alpha_diversity_tx)
+
+shapiro.test(alpha_diversity_tx$shannon_entropy)
+shapiro.test(alpha_diversity_tx$observed_features)
+shapiro.test(alpha_diversity_tx$faith_pd)
+shapiro.test(alpha_diversity_tx$pielou_evenness)
+
+```
+Assign data subset to "group" variable to use for downstream analyses
+```{r}
+group <- group_control_oc
+group
+
+```
+### Add metadata to alpha diversity data
+```{r}
+# Merge alpha diversity data with assigned group
+alpha_merged <- merge(alpha_diversity_tx, group, by = "SampleID")
+
+```
+### Linear Model -- Effect of **Treatment * Day** on shannon_entropy, observed_features, faith_pd", pielou_evenness
+```{r}
+library(MuMIn)
+
+# Fit model for each alpha diversity metric, where Treatment is the group variable and 1|SubjectID specifies the random effect
+lmer_shannon <- lmer(alpha_merged$shannon_entropy ~ Treatment * Day + (1|Subject), data = alpha_merged)
+summary(lmer_shannon)
+options(contrasts = c("contr.sum","contr.poly")) #change contrasts and refit model
+lmer_shannon <- lmer(alpha_merged$shannon_entropy ~ Treatment * Day + (1|Subject), data = alpha_merged)
+lmer_shannon_anova <- Anova(lmer_shannon, type = "III")
+lmer_shannon_anova
+options(contrasts = c("contr.treatment","contr.poly")) #change contrasts back
+r.squaredGLMM(lmer_shannon)
+
+lmer_obsft <- lmer(alpha_merged$observed_features ~ Treatment * Day + (1|Subject), data = alpha_merged)
+summary(lmer_obsft)
+options(contrasts = c("contr.sum","contr.poly")) #change contrasts and refit
+lmer_obsft <- lmer(alpha_merged$observed_features ~ Treatment * Day + (1|Subject), data = alpha_merged)
+lmer_obsft_anova <- Anova(lmer_obsft, type = "III")
+lmer_obsft_anova
+options(contrasts = c("contr.treatment","contr.poly")) #change contrasts back
+r.squaredGLMM(lmer_obsft)
+
+
+lmer_faith <- lmer(alpha_merged$faith_pd ~ Treatment * Day + (1|Subject), data = alpha_merged)
+summary(lmer_faith)
+options(contrasts = c("contr.sum","contr.poly")) #change contrasts and refit model
+lmer_faith <- lmer(alpha_merged$faith_pd ~ Treatment * Day + (1|Subject), data = alpha_merged)
+lmer_faith_anova <- Anova(lmer_faith, type = "III")
+lmer_faith_anova
+options(contrasts = c("contr.treatment","contr.poly")) #change contrasts back
+r.squaredGLMM(lmer_faith)
+
+
+lmer_pielou <- lmer(alpha_merged$pielou_evenness ~ Treatment * Day + (1|Subject), data = alpha_merged)
+summary(lmer_pielou)
+options(contrasts = c("contr.sum","contr.poly")) #change contrasts and refit model
+lmer_pielou <- lmer(alpha_merged$pielou_evenness ~ Treatment * Day + (1|Subject), data = alpha_merged)
+lmer_pielou_anova <- Anova(lmer_pielou, type = "III")
+lmer_pielou_anova
+options(contrasts = c("contr.treatment","contr.poly")) #change contrasts back
+r.squaredGLMM(lmer_pielou)
+
+```
+Combine lme results for all alpha diversity metrics in a single df to save
+```{r}
+lmer_shannon_df <- lmer_shannon_anova
+lmer_obsft_df <- lmer_obsft_anova
+lmer_faith_df <- lmer_faith_anova
+lmer_pielou_df <- lmer_pielou_anova
+
+```
+Save lme model results as .csv file
+```{r}
+write.csv(lmer_shannon_df, "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/alpha/alpha-results_lmer_shannon_df.csv", row.names = FALSE)
+
+write.csv(lmer_obsft_df, "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/alpha/alpha-results_lmer_obsft_df.csv", row.names = FALSE)
+
+write.csv(lmer_faith_df, "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/alpha/alpha-results_lmer_faith_df.csv", row.names = FALSE)
+
+write.csv(lmer_pielou_df, "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/alpha/alpha-results_lmer_pielou_df.csv", row.names = FALSE)
+
+```
+### Check assumptions of the model **Treatment & Day**
+
+#### 1. Linearity - the relationship between the dependent variable and the fixed effects should be linear.
+                  - the relationship between predictors and the dependent variable is linear.
+```{r}
+par(mfrow = c(2, 2))
+
+plot(resid(lmer_shannon), alpha_merged$shannon_entropy)
+plot(resid(lmer_obsft), alpha_merged$observed_features)
+plot(resid(lmer_faith), alpha_merged$faith_pd)
+plot(resid(lmer_pielou), alpha_merged$pielou_evenness)
+
+```
+#### 2. Homoscedasticity - the variance of residuals should be constant across the range of fitted values.
+                         - the residuals have constant variance.
+```{r}
+# Plot residuals vs. fitted values
+plot(resid(lmer_shannon) ~ fitted(lmer_shannon)) # or plot(lmer_shannon)
+plot(resid(lmer_obsft) ~ fitted(lmer_obsft))
+plot(resid(lmer_faith) ~ fitted(lmer_faith))
+plot(resid(lmer_pielou) ~ fitted(lmer_pielou))
+
+```
+#### Normality - the residuals of the model are normally distributed
+```{r}
+# id= identifies values that may be exerting undue influence on the model (i.e. outliers)
+qqmath(lmer_shannon, id=0.05)
+qqmath(lmer_obsft, id=0.05)
+qqmath(lmer_faith, id=0.05)
+qqmath(lmer_pielou, id=0.05)
+
+```
+#### 5. No multicollinearity - the predictor variables are not perfectly correlated with each other.
+
+A VIF greater than 5 or 10 often indicates problematic multicollinearity. In mixed models, you can calculate VIF for the fixed effects only, because the random effects are assumed to be uncorrelated with the fixed effects and with each other:
+```{r}
+library(car)
+
+vif(lmer_shannon)
+vif(lmer_obsft)
+vif(lmer_faith)
+vif(lmer_pielou)
+
+```
+
+```{r}
+# Reset the mfrow parameter to default
+par(mfrow = c(1, 1))
+
+```
+### Linear Model -- Effect of **Diet** on shannon_entropy, observed_features, faith_pd", pielou_evenness
+Subset alpha_merged according to Prune-NoPrune group
+```{r}
+group <- group_prune_no.prune
+
+# Merge alpha diversity data with assigned group
+alpha_merged_prune <- merge(alpha_diversity_tx, group, by = "SampleID")
+
+```
+
+
+```{r}
+# Fit model for each alpha diversity metric, where Diet is the group variable and 1|SubjectID specifies the random effect
+lmer_shannon_diet <- lmer(alpha_merged_prune$shannon_entropy ~ Diet + (1|Subject), data = alpha_merged_prune)
+summary(lmer_shannon_diet)
+options(contrasts = c("contr.sum","contr.poly")) #change contrasts and refit model
+lmer_shannon_diet <- lmer(alpha_merged_prune$shannon_entropy ~ Diet + (1|Subject), data = alpha_merged_prune)
+lmer_shannon_diet_anova <- Anova(lmer_shannon_diet, type = "III")
+lmer_shannon_diet_anova
+options(contrasts = c("contr.treatment","contr.poly")) #change contrasts back
+r.squaredGLMM(lmer_shannon_diet)
+
+
+lmer_obsft_diet <- lmer(alpha_merged_prune$observed_features ~ Diet + (1|Subject), data = alpha_merged_prune)
+summary(lmer_obsft_diet)
+options(contrasts = c("contr.sum","contr.poly")) #change contrasts and refit model
+lmer_obsft_diet <- lmer(alpha_merged_prune$observed_features ~ Diet + (1|Subject), data = alpha_merged_prune)
+lmer_obsft_diet_anova <- Anova(lmer_obsft_diet, type = "III")
+lmer_obsft_diet_anova
+options(contrasts = c("contr.treatment","contr.poly")) #change contrasts back
+r.squaredGLMM(lmer_obsft_diet)
+
+
+lmer_faith_diet <- lmer(alpha_merged_prune$faith_pd ~ Diet + (1|Subject), data = alpha_merged_prune)
+summary(lmer_faith_diet)
+options(contrasts = c("contr.sum","contr.poly")) #change contrasts and refit model
+lmer_faith_diet <- lmer(alpha_merged_prune$faith_pd ~ Diet + (1|Subject), data = alpha_merged_prune)
+lmer_faith_diet_anova <- Anova(lmer_faith_diet, type = "III")
+lmer_faith_diet_anova
+options(contrasts = c("contr.treatment","contr.poly")) #change contrasts back
+r.squaredGLMM(lmer_faith_diet)
+
+
+lmer_pielou_diet <- lmer(alpha_merged_prune$pielou_evenness ~ Diet + (1|Subject), data = alpha_merged_prune)
+summary(lmer_pielou_diet)
+options(contrasts = c("contr.sum","contr.poly")) #change contrasts and refit model
+lmer_pielou_diet <- lmer(alpha_merged_prune$pielou_evenness ~ Diet + (1|Subject), data = alpha_merged_prune)
+lmer_pielou_diet_anova <- Anova(lmer_pielou_diet, type = "III")
+lmer_pielou_diet_anova
+options(contrasts = c("contr.treatment","contr.poly")) #change contrasts back
+r.squaredGLMM(lmer_pielou_diet)
+
+```
+### Check assumptions of the model **Diet**
+
+#### 1. Linearity - the relationship between the dependent variable and the fixed effects should be linear.
+                  - the relationship between predictors and the dependent variable is linear.
+```{r}
+par(mfrow = c(2, 2))
+
+plot(resid(lmer_shannon_diet), alpha_merged_prune$shannon_entropy)
+plot(resid(lmer_obsft_diet), alpha_merged_prune$observed_features)
+plot(resid(lmer_faith_diet), alpha_merged_prune$faith_pd)
+plot(resid(lmer_pielou_diet), alpha_merged_prune$pielou_evenness)
+
+```
+#### 2. Homoscedasticity - the variance of residuals should be constant across the range of fitted values.
+                         - the residuals have constant variance.
+```{r}
+# Plot residuals vs. fitted values
+plot(resid(lmer_shannon_diet) ~ fitted(lmer_shannon_diet)) # or plot(lmer_shannon_diet)
+plot(resid(lmer_obsft_diet) ~ fitted(lmer_obsft_diet))
+plot(resid(lmer_faith_diet) ~ fitted(lmer_faith_diet))
+plot(resid(lmer_pielou_diet) ~ fitted(lmer_pielou_diet))
+
+```
+#### Normality - the residuals of the model are normally distributed
+```{r}
+# id= identifies values that may be exerting undue influence on the model (i.e. outliers)
+qqmath(lmer_shannon_diet, id=0.05)
+qqmath(lmer_obsft_diet, id=0.05)
+qqmath(lmer_faith_diet, id=0.05)
+qqmath(lmer_pielou_diet, id=0.05)
+
+```
+#### 5. No multicollinearity - the predictor variables are not perfectly correlated with each other.
+
+**N/A since only testing Diet effects here**
+
+```{r}
+# Reset the mfrow parameter to default
+par(mfrow = c(1, 1))
+
+```
+### Plot alpha diversity
+```{r}
+# merge alpha diversity data with all data
+alpha_all <- merge(alpha_diversity_tx, map, by = "SampleID")
+
+# Create a data frame for plotting
+alpha_plot_data <- data.frame(
+  Metric = rep(c("Shannon Entropy", "Observed Features", "Faith PD", "Pielou Evenness"), each = nrow(map)),
+  Value = c(alpha_all$shannon_entropy, alpha_all$observed_features, alpha_all$faith_pd, alpha_all$pielou_evenness),
+  Treatment = rep(alpha_all$Treatment, times = 4),
+  Diet = rep(alpha_all$Diet, times = 4),
+  Day = rep(alpha_all$Day, times = 4)
+)
+head(alpha_plot_data)
+
+```
+
+```{r}
+# append Day to every entry in the 'Day' column for better label aesthetics
+# alpha_plot_data <- alpha_plot_data %>%
+#  mutate(Day = paste0("Day ", Day))
+
+# Create box plots using 'Day' as a facet
+# alpha_treat_p <- ggplot(alpha_plot_data, aes(x = Treatment, y = Value, fill = Treatment)) +
+#   geom_boxplot(colour = "black") +
+#   scale_fill_manual(values = c( "#332288","#E066A6", "#E6A316", "#256769")) +
+#   facet_grid(Metric ~ Day, scales = "free_y") +
+#   theme(aspect.ratio = 2.5, strip.text = element_text(size = 7.5), # strip.text.x or strip.text.y to change x- and y-axis labels
+#         axis.text.x = element_text(size = 7), # Increase x-axis tick label text size
+#         axis.text.y = element_text(size = 7)) +
+#   xlab("") + ylab("") +
+#   ggtitle("")
+# alpha_treat_p
+
+alpha_treat_p <- ggplot(alpha_plot_data, aes(x = Treatment, y = Value, fill = Treatment)) +
+  geom_boxplot(colour = "black") +
+  scale_fill_manual(values = c("#E6A316", "#E066A6")) +
+  facet_wrap(~ Metric, scales = "free_y", nrow = 4, strip.position = "right") +
+  theme(aspect.ratio = 2.5, strip.text = element_text(size = 7.5), # strip.text.x or strip.text.y to change x- and y-axis labels
+        axis.text.x = element_text(size = 7), # Increase x-axis tick label text size
+        axis.text.y = element_text(size = 7)) +
+  xlab("") + ylab("") +
+  ggtitle("")
+alpha_treat_p
+
+alpha_treat_p <- ggplot(alpha_plot_data, aes(x = Treatment, y = Value, fill = Treatment)) +
+  geom_boxplot(aes(position = Day), colour = "black", position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = c("#E6A316", "#E066A6")) +
+  facet_wrap(~ Metric, scales = "free_y", nrow = 4, strip.position = "right") +
+  theme(aspect.ratio = 2.5, strip.text = element_text(size = 7.5), # strip.text.x or strip.text.y to change x- and y-axis labels
+        axis.text.x = element_text(size = 7), # Increase x-axis tick label text size
+        axis.text.y = element_text(size = 7)) +
+  xlab("") + ylab("") +
+  ggtitle("")
+alpha_treat_p
+
+alpha_treat_p <- ggplot(alpha_plot_data, aes(x = Treatment, y = Value, fill = interaction(Treatment, Day))) +
+  geom_boxplot(position = "dodge", colour = "black") +
+  scale_fill_manual(values = c("#E6A316", "#E066A6", "#B6A316", "#B066A6")) +
+  facet_wrap(~ Metric, scales = "free_y", nrow = 4, strip.position = "right") +
+  theme(aspect.ratio = 2.5, strip.text = element_text(size = 7.5),
+        axis.text.x = element_text(size = 7),
+        axis.text.y = element_text(size = 7)) +
+  xlab("") + ylab("") +
+  ggtitle("")
+alpha_treat_p
+
+alpha_treat_p <- ggplot(alpha_plot_data, aes(x = Treatment, y = Value, fill = interaction(Treatment, Day))) +
+  geom_boxplot(position = "dodge", colour = "black") +
+  scale_fill_manual(
+    values = c("#E6A316", "#E066A6", "#e8d1a0", "#e0bccf"), 
+    name = "Treatment:Day",
+    labels = c("Control - 1", "User - 1", "Control - 21", "User - 21") # Modify as needed
+  ) +
+  facet_wrap(~ Metric, scales = "free_y", nrow = 4, strip.position = "right") +
+  theme(aspect.ratio = 2.5, strip.text = element_text(size = 7.5),
+        axis.text.x = element_text(size = 7),
+        axis.text.y = element_text(size = 7)) +
+  xlab("") + ylab("") +
+  ggtitle("")
+alpha_treat_p
+
+
+
+# alpha_diet_p <- ggplot(alpha_plot_data, aes(x = Diet, y = Value, fill = Diet)) +
+#   geom_boxplot(colour = "black") +
+#   scale_fill_manual(values = c("#E066A6","#332288", "#E6A316", "#256769")) +
+#   facet_wrap(~ Metric, scales = "free_y", nrow = 4, strip.position = "right") +
+#   theme(aspect.ratio = 2.5, strip.text = element_text(size = 7.5), # strip.text.x or strip.text.y to change x- and y-axis labels
+#         axis.text.x = element_text(size = 7), # Increase x-axis tick label text size
+#         axis.text.y = element_text(size = 7)) +
+#   xlab("") + ylab("")
+alpha_diet_p
+
+# install.packages("grid")
+# install.packages("egg")
+# library(grid)
+# library(egg)
+
+# alpha_p_title <- grid::textGrob("", gp = gpar(fontsize = 20)) # adds a title to whole figure
+# 
+# alpha_treat_diet_p <- egg::ggarrange(alpha_treat_p, alpha_diet_p, labels = c("A", "B"), 
+#                          ncol = 2, nrow = 1, heights = c(3), 
+#                          top = alpha_p_title) # top = alpha_p_title uses the title in the figure
+
+alpha_treat_diet_p <- egg::ggarrange(alpha_treat_p, alpha_diet_p, labels = c("A", "B"), 
+                         ncol = 2, nrow = 1, heights = c(2))
+alpha_treat_diet_p
+
+```
+Save plots as .png images
+```{r}
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/alpha/alpha-treatment-plot.png", plot = alpha_treat_p, width = 6, height = 7, dpi = 300)
+
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/alpha/alpha-diet-plot.png", plot = alpha_diet_p, width = 6, height = 7, dpi = 300)
+
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/alpha/alpha-treat_diet-plot.png", plot = alpha_treat_diet_p, width = 7, height = 5, dpi = 300)
+
+```

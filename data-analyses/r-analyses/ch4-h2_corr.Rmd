@@ -1,0 +1,480 @@
+## 5.1 Correlation analysis between CH4 & H2
+```{r}
+# library(devtools)
+# library(ggpubr)
+
+hydro_meth_df <- map
+hydro_meth_df <- hydro_meth_df[complete.cases(hydro_meth_df),]
+
+plot(hydro_meth_df[6:7])
+
+# library(psych)
+pairs.panels(hydro_meth_df[6:7])
+
+shapiro.test(hydro_meth_df$H2)
+shapiro.test(hydro_meth_df$CH4)
+
+hydro_meth_df$H2 <- sqrt(hydro_meth_df$H2)
+hydro_meth_df$CH4 <- sqrt(hydro_meth_df$CH4)
+
+shapiro.test(hydro_meth_df$H2)
+shapiro.test(hydro_meth_df$CH4)
+plot(hydro_meth_df[6:7])
+# still not normal, use nonparametric alternative to pearson's
+
+# Test significance of correlation - nonparametric
+corr_test_sp <- cor.test(hydro_meth_df$H2, hydro_meth_df$CH4, method="spearman")
+corr_test_sp
+corr_test_kn <- cor.test(hydro_meth_df$H2, hydro_meth_df$CH4, method="kendall")
+corr_test_kn
+
+# A positive rho value indicates that as one variable increases, the other tends to increase as well. The value of rho ranges between # -1 and 1. Closer to -1 means a strong negative correlation, closer to 1 means a strong positive correlation, and closer to 0 means # a weaker correlation.
+
+# The analysis indicates a statistically significant, moderate, positive correlation between CH4 and H2. Keep in mind that correlation does not imply causation.
+
+```
+## H2 & CH4 Outliers
+```{r}
+outliers <- subset(hydro_meth_df, Subject %in% c(950, 962, 921, 735)) # , 737, 989?
+
+library(ggrepel)
+p_h2_ch4_relat <- ggplot(hydro_meth_df, aes(x = H2, y = CH4, color = Treatment, shape = Diet)) +
+  geom_point(size = 3) +
+  geom_text_repel(data = outliers, aes(x = H2, y = CH4, label = Subject), nudge_x = 0.1, nudge_y = 0.1, color = "black", size = 3) +
+  xlab("Hydrogen (ppm)") +
+  ylab("Methane (ppm)") +
+  theme_classic()
+p_h2_ch4_relat
+
+```
+Save plot
+```{r}
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/h2_ch4_corr/p_h2_ch4_relationship.png", plot = p_h2_ch4_relat, width = 5, height = 4, dpi = 300)
+
+```
+Compare effect of Diet on H2 and CH4 levels (exclude outliers?)
+```{r}
+hydro_meth_diet_no.outliers <- hydro_meth_df[!(hydro_meth_df$SampleID %in% outliers$SampleID),]
+hydro_meth_diet_no.outliers <- hydro_meth_df[(hydro_meth_df$SampleID %in% group_prune_no.prune$SampleID),]
+
+# Renaming the columns using the rename function
+hydro_meth_diet_no.outliers <- hydro_meth_diet_no.outliers %>%
+  rename(
+    Methane = CH4,
+    Hydrogen = H2
+  )
+
+h2_prune_p <- ggplot(hydro_meth_diet_no.outliers, aes(x = Diet, y = Hydrogen)) +
+  geom_boxplot(aes (fill = Diet), colour = "black") +
+  scale_fill_manual(values = c("#E066A6","#332288", "#E6A316", "#256769")) +
+  ylab("Hydrogen (ppm)")
+h2_prune_p
+
+ch4_prune_p <- ggplot(hydro_meth_diet_no.outliers, aes(x = Diet, y = Methane)) +
+  geom_boxplot(aes (fill = Diet), colour = "black") +
+  scale_fill_manual(values = c("#E066A6","#332288", "#E6A316", "#256769")) +
+  ylab("Methane (ppm)")
+ch4_prune_p
+
+# Reshape the data into a long format
+hydro_meth_diet_no.outliers_long <- hydro_meth_diet_no.outliers %>%
+  pivot_longer(cols = c(Hydrogen, Methane), names_to = "Gas", values_to = "Value")
+
+h2_ch4_prune_no_prune_p <- ggplot(hydro_meth_diet_no.outliers_long, aes(x = Diet, y = Value, fill = Diet)) +
+  geom_boxplot(colour = "black") +
+  scale_fill_manual(values = c("No Prune" = "#E066A6", "Prune" = "#332288")) + # Change according to Diet levels
+  facet_wrap(~ Gas, scales = "free") +
+  ylab("Concentration (ppm)") +
+  xlab("")
+h2_ch4_prune_no_prune_p
+
+```
+Save plot
+```{r}
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/h2_ch4_corr/p_h2_ch4_levels_diet.png", plot = h2_ch4_prune_no_prune_p, width = 5, height = 4, dpi = 300)
+
+```
+Compare effects of Treatment -- **filter out users who consumed prune**
+```{r}
+# Filter out outliers
+hydro_meth_treat_no.outliers <- hydro_meth_df[!(hydro_meth_df$SampleID %in% outliers$SampleID),]
+hydro_meth_treat_no.outliers <- hydro_meth_df[(hydro_meth_df$SampleID %in% group_control_oc$SampleID),]
+
+# Renaming the columns from H2 to Hydrogen, CH4 to Methane for aesthetics
+hydro_meth_treat_no.outliers <- hydro_meth_treat_no.outliers %>%
+  rename(
+    Methane = CH4,
+    Hydrogen = H2
+  )
+
+h2_oc.use_p <- ggplot(hydro_meth_treat_no.outliers, aes(x = Treatment, y = sqrt(Hydrogen))) +
+  geom_boxplot(aes (fill = Treatment), colour = "black") +
+  scale_fill_manual(values = c("#332288","#E066A6","#E6A316", "#256769")) +
+  ylab("Hydrogen (ppm)")
+h2_oc.use_p
+
+ch4_oc.use_p <- ggplot(hydro_meth_treat_no.outliers, aes(x = Treatment, y = sqrt(Methane))) +
+  geom_boxplot(aes (fill = Treatment), colour = "black") +
+  scale_fill_manual(values = c("#332288","#E066A6","#E6A316", "#256769")) +
+  ylab("Methane (ppm)")
+ch4_oc.use_p
+
+# Reshape the data into a long format
+hydro_meth_treat_no.outliers_long <- hydro_meth_treat_no.outliers %>%
+  pivot_longer(cols = c(Hydrogen, Methane), names_to = "Gas", values_to = "Value")
+
+h2_ch4_control_oc_p <- ggplot(hydro_meth_treat_no.outliers_long, aes(x = Treatment, y = Value, fill = Treatment)) +
+  geom_boxplot(colour = "black") +
+  scale_fill_manual(values = c("User" = "#E066A6", "Control" = "#E6A316")) + # Change according to Diet levels
+  facet_wrap(~ Gas, scales = "free") +
+  ylab("Concentration (ppm)") +
+  xlab("")
+h2_ch4_control_oc_p
+
+###############################################
+##### MODIFIED ABOVE TO INCLUDE DAY INTERACTION
+###############################################
+
+h2_ch4_control_oc_p <- ggplot(hydro_meth_treat_no.outliers_long, 
+                              aes(x = Treatment, y = Value, fill = interaction(Treatment, Day))) +
+  geom_boxplot(position = "dodge", colour = "black") +
+  scale_fill_manual(
+    values = c("#E6A316", "#E066A6", "#e8d1a0", "#e0bccf"), 
+    name = "Treatment:Day",
+    labels = c("Control - 1", "User - 1", "Control - 21", "User - 21") # Modify as needed
+  ) +
+  facet_wrap(~ Gas, scales = "free") +
+  ylab("Concentration (ppm)") +
+  xlab("")
+  # theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Optionally rotate x-axis labels for better readability
+h2_ch4_control_oc_p
+
+
+h2_ch4_diet_treat_p <- egg::ggarrange(h2_ch4_control_oc_p, h2_ch4_prune_no_prune_p, labels = c("A", "B"), 
+                         ncol = 2, nrow = 1, heights = c(3))
+h2_ch4_diet_treat_p
+
+```
+Save plot
+```{r}
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/h2_ch4_corr/p_h2_ch4_levels_treat.png", plot = h2_ch4_control_oc_p, width = 5, height = 4, dpi = 300)
+
+# combined plot
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/h2_ch4_corr/p_h2_ch4_levels_treat_diet.png", plot = h2_ch4_diet_treat_p, width = 8, height = 4, dpi = 300)
+
+```
+Linear mixed effects model -- H2 and CH4
+```{r}
+lmer_h2 <- lmer(hydro_meth_treat_no.outliers$Hydrogen ~ Treatment * Day + (1|Subject), data = hydro_meth_treat_no.outliers)
+summary(lmer_h2)
+options(contrasts = c("contr.sum","contr.poly")) #change contrasts and refit
+lmer_h2 <- lmer(hydro_meth_treat_no.outliers$Hydrogen ~ Treatment * Day + (1|Subject), data = hydro_meth_treat_no.outliers)
+lmer_h2_anova <- Anova(lmer_h2, type = "III")
+lmer_h2_anova
+options(contrasts = c("contr.treatment","contr.poly")) #change contrasts back
+r.squaredGLMM(lmer_h2)
+
+lmer_ch4 <- lmer(hydro_meth_treat_no.outliers$Methane ~ Treatment * Day + (1|Subject), data = hydro_meth_treat_no.outliers)
+summary(lmer_ch4)
+options(contrasts = c("contr.sum","contr.poly")) #change contrasts and refit 
+lmer_ch4 <- lmer(hydro_meth_treat_no.outliers$Methane ~ Treatment * Day + (1|Subject), data = hydro_meth_treat_no.outliers)
+lmer_ch4_anova <- Anova(lmer_ch4, type = "III")
+lmer_ch4_anova
+options(contrasts = c("contr.treatment","contr.poly")) #change contrasts back
+r.squaredGLMM(lmer_ch4)
+
+lmer_h2_diet <- lmer(hydro_meth_diet_no.outliers$Hydrogen ~ Diet + (1|Subject), data = hydro_meth_diet_no.outliers)
+summary(lmer_h2_diet)
+options(contrasts = c("contr.sum","contr.poly")) #change contrasts and refit
+lmer_h2_diet <- lmer(hydro_meth_diet_no.outliers$Hydrogen ~ Diet + (1|Subject), data = hydro_meth_diet_no.outliers)
+lmer_h2_diet_anova <- Anova(lmer_h2_diet, type = "III")
+lmer_h2_diet_anova
+options(contrasts = c("contr.treatment","contr.poly")) #change contrasts back
+r.squaredGLMM(lmer_h2_diet)
+
+lmer_ch4_diet <- lmer(hydro_meth_diet_no.outliers$Methane ~ Diet + (1|Subject), data = hydro_meth_diet_no.outliers)
+summary(lmer_ch4_diet)
+options(contrasts = c("contr.sum","contr.poly")) #change contrasts and refit
+lmer_ch4_diet <- lmer(hydro_meth_diet_no.outliers$Methane ~ Diet + (1|Subject), data = hydro_meth_diet_no.outliers)
+lmer_ch4_diet_anova <- Anova(lmer_ch4_diet, type = "III")
+lmer_ch4_diet_anova
+options(contrasts = c("contr.treatment","contr.poly")) #change contrasts back
+r.squaredGLMM(lmer_ch4_diet)
+
+```
+Model assumptions
+```{r}
+par(mfrow = c(2, 2))
+
+plot(resid(lmer_h2), hydro_meth_treat_no.outliers$Hydrogen)
+plot(resid(lmer_ch4), hydro_meth_treat_no.outliers$Methane)
+plot(resid(lmer_h2_diet), hydro_meth_diet_no.outliers$Hydrogen)
+plot(resid(lmer_ch4_diet), hydro_meth_diet_no.outliers$Methane)
+
+plot(resid(lmer_h2) ~ fitted(lmer_h2)) # or plot(lmer_h2)
+plot(resid(lmer_ch4) ~ fitted(lmer_ch4))
+plot(resid(lmer_h2_diet) ~ fitted(lmer_h2_diet))
+plot(resid(lmer_ch4_diet) ~ fitted(lmer_ch4_diet))
+
+qqmath(lmer_h2, id=0.05)
+qqmath(lmer_ch4, id=0.05)
+qqmath(lmer_h2_diet, id=0.05)
+qqmath(lmer_ch4_diet, id=0.05)
+
+#library(car)
+vif(lmer_h2)
+vif(lmer_ch4)
+
+# Reset the mfrow parameter to default
+par(mfrow = c(1, 1))
+
+```
+## Get H2/CH4 ratios
+```{r}
+# subset data according to prune-no prune group -- use hydro_meth_diet_no.outliers?
+# hydro_meth_pnp <- hydro_meth_df[row.names(hydro_meth_df) %in% map$SampleID, ]
+head(hydro_meth_df)
+
+# save original df as a new variable
+hydro_meth_df_orig <- hydro_meth_df
+
+# calculate the H2 to CH4 ratio
+hydro_meth_df$CH4_to_H2 <- hydro_meth_df$CH4/hydro_meth_df$H2
+head(hydro_meth_df)
+
+```
+## Subset data
+```{r}
+# subset clr-transformed data according to 'hydro_meth_df'
+species_tx_h2_ch4 <- species_tx[, colnames(species_tx) %in% hydro_meth_df$SampleID]
+head(species_tx_h2_ch4)
+
+```
+## Get H2/CH4 correlations with clr species abundances
+```{r}
+# Transpose the microbial abundances dataframe and convert SampleID column names to a separate column
+species_tx_h2_ch4_t <- data.frame(t(species_tx_h2_ch4))
+head(species_tx_h2_ch4_t)
+
+# Convert row names to a column
+species_tx_h2_ch4_t_rn <- rownames_to_column(species_tx_h2_ch4_t, var = "SampleID")
+head(species_tx_h2_ch4_t_rn)
+
+# merge transposed abundances with map data
+hydro_meth_species_tx <- merge(hydro_meth_df, species_tx_h2_ch4_t_rn, by = "SampleID")
+head(hydro_meth_species_tx)
+
+```
+Compute correlations -- **CH4_to_H2**
+```{r}
+# compute correlations between ch4/h2 ratio and species abundances
+ch4_to_h2_corr <- sapply(hydro_meth_species_tx[,9:ncol(hydro_meth_species_tx)], function(species) {
+  test_result <- cor.test(hydro_meth_species_tx$CH4_to_H2, species, method = 'spearman') # method = 'pearson'
+  c(Estimate = test_result$estimate, Pvalue = test_result$p.value)
+}, simplify = "data.frame")
+
+# Convert results list to dataframe
+ch4_to_h2_corr_results <- as.data.frame(ch4_to_h2_corr)
+ch4_to_h2_corr_results <- data.frame(t(ch4_to_h2_corr_results))
+colnames(ch4_to_h2_corr_results) <- c("Correlation", "Pvalue")
+
+# Add species names (rownames) as a new column
+ch4_to_h2_corr_results <- rownames_to_column(ch4_to_h2_corr_results, var = "Species")
+# rownames(ch4_to_h2_corr_results) <- NULL
+head(ch4_to_h2_corr_results)
+
+```
+Save abundance correlations as .csv file
+```{r}
+write.csv(ch4_to_h2_corr_results, "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/h2_ch4_corr/ch4_to_h2_corr_results.csv", row.names = FALSE)
+
+```
+Rename taxa to simply Species name
+```{r}
+# Define a function to find the most specific taxon
+find_most_specific_taxon <- function(taxon_string) {
+  # Split the string into individual taxon
+  split_taxon <- strsplit(taxon_string, "\\.")[[1]]
+
+  # Remove the level identifiers
+  named_taxon <- gsub("^.*__ ", "", split_taxon)
+
+  # Reverse the order
+  rev_taxon <- rev(named_taxon)
+
+  # Find the first taxon that doesn't say 'uncultured' or 'metagenome'
+  specific_taxon <- rev_taxon[!rev_taxon %in% c('uncultured',
+                                                'unidentified',
+                                                'uncultured_bacterium',
+                                                'metagenome',
+                                                'uncultured_organism',
+                                                'human_gut',
+                                                'gut_metagenome',
+                                                '_bacterium')][1]
+
+  return(specific_taxon)
+}
+
+species_c4m <- ch4_to_h2_corr_results
+species_c4m$Species <- ch4_to_h2_corr_results$Species
+
+# View the updated data frame
+head(species_c4m)
+
+# Remove extra "__." 
+species_c4m$Species <- gsub("\\.__$", "", species_c4m$Species)
+species_c4m$Species <- gsub("\\.__$", "", species_c4m$Species)
+species_c4m$Species <- gsub("\\.__$", "", species_c4m$Species)
+species_c4m$Species <- gsub("\\.__$", "", species_c4m$Species)
+species_c4m$Species <- gsub("\\.__$", "", species_c4m$Species)
+
+# Remove "." where it's not followed by any more characters
+species_c4m$Species <- gsub("\\.$", "", species_c4m$Species)
+
+# Remove "." where followed by a single "_"
+species_c4m$Species <- gsub("\\._(?!_)", "_", species_c4m$Species, perl=TRUE)
+
+# Remove "." when preceded by two "__"
+species_c4m$Species <- gsub("(?<=__)\\.", "", species_c4m$Species, perl=TRUE)
+
+# Add a space after each of the specified patterns
+species_c4m$Species <- gsub("(d__|p__|c__|o__|f__|g__|s__)", "\\1 ", species_c4m$Species)
+
+# Remove "." from species/genera like UCG.003 so it reads UCG003
+species_c4m$Species <- gsub("([a-zA-Z])\\.([0-9])", "\\1\\2", species_c4m$Species)
+
+# Check
+head(species_c4m$Species)
+
+# Apply function to Species count table
+species_c4m$Species <- sapply(species_c4m$Species, find_most_specific_taxon)
+
+# Clean up special characters left in names
+species_c4m$Species <- gsub("\\[|\\]", "", species_c4m$Species)
+
+# Replace underscores with spaces
+species_c4m$Species <- gsub("_", " ", species_c4m$Species)
+
+# Replace "." in sp.
+species_c4m$Species <- gsub("sp$", "sp.", species_c4m$Species)
+
+ch4_to_h2_corr_results <- species_c4m
+
+```
+Correlation log plot -- **CH_to_H2**
+```{r}
+# # For one species at a time
+# ggplot(hydro_meth_pnp_species_tx, aes(x=CH_to_H2, y=Prevotella)) + geom_point() + geom_smooth(method=lm) + labs(x="H2/CH4 Ratio", y="Prevotella")
+# # Replace 'Species1' with the actual column name for each species in dataframe
+
+library(ggrepel)
+
+ggplot(ch4_to_h2_corr_results, aes(x=Correlation, y=-log10(Pvalue))) + geom_point() + labs(x="Correlation", y="-log10(Pvalue)") + geom_hline(yintercept=-log10(0.05), linetype="dashed", color = "red")
+
+# Create a new column in the dataframe to indicate significance
+ch4_to_h2_corr_results$Significant <- ifelse(ch4_to_h2_corr_results$Pvalue < 0.05, "Significant", "Not significant")
+
+# Create the volcano plot
+p_ch4_to_h2_corr <- ggplot(ch4_to_h2_corr_results, aes(x=Correlation, y=-log10(Pvalue), color=Significant)) + 
+  geom_point() + 
+  geom_hline(yintercept=-log10(0.05), linetype="dashed", color = "red") +
+  labs(x="Spearman ρ", y="-log10(Pvalue)", color="Significance") + 
+  theme_bw() + 
+  geom_text_repel(data = subset(ch4_to_h2_corr_results, Pvalue < 0.05), aes(label=Species), 
+                  size=3, box.padding = unit(0.35, "lines"), max.overlaps = 12, color = "black") +
+  ggtitle("") + # CH4/H2 ratio
+  theme(legend.position = "none")
+p_ch4_to_h2_corr
+
+# # Correct 'Species' names if needed
+# ch4_to_h2_corr_results[154, "Species"] <- "Ruminococcaceae"
+
+```
+Combine all 3 log10 correlation plots into one figure
+```{r}
+p_h2ch4_corr <- egg::ggarrange(p_h2_corr, p_ch4_corr, p_ch4_to_h2_corr, labels = c("A", "B", "C"), 
+                         ncol = 1, nrow = 3, heights = c(1,1,1))
+p_h2ch4_corr
+
+```
+
+```{r}
+# Save plots as .png images
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/h2_ch4_corr/p_ch4_to_h2_abund_corr.png", plot = p_ch4_to_h2_corr, width = 10, height = 6, dpi = 300)
+
+# Save plots as .png images
+ggsave(filename = "~/Documents/Programming/Microbiome/microbiome-ocp/data-analyses/results/h2_ch4_corr/p_h2ch4_abund_corr.png", plot = p_h2ch4_corr, width = 8, height = 10, dpi = 300)
+
+```
+## NMDS
+```{r}
+species_tx_h2_ch4_m <- as.matrix(t(species_tx_h2_ch4))
+
+nmds_species_h2_ch4 <- metaMDS(species_tx_h2_ch4_m, distance = "euclidean", parallel = 2, k = 2)
+nmds_species_h2_ch4
+
+# Create a dataframe from the NMDS scores
+nmds_scores_species_h2_ch4 <- as.data.frame(scores(nmds_species_h2_ch4))
+nmds_scores_species_h2_ch4 <- rownames_to_column(nmds_scores_species_h2_ch4, var = "SampleID")
+
+# Merge with the H2_CH4_ratio
+nmds_scores_species_h2_ch4 <- merge(nmds_scores_species_h2_ch4, hydro_meth_pnp, by = 'SampleID', all.x = TRUE)
+nmds_scores_species_h2_ch4
+
+# Plot
+p <- ggplot(nmds_scores_species_h2_ch4, aes(x = NMDS1, y = NMDS2, color = CH_to_H2, fill = CH_to_H2, shape = Diet)) +
+  geom_point(size = 3) +
+  scale_color_gradient(low = "blue", high = "red") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme_classic() +
+  theme(legend.position = "bottom")
+p
+
+# We can use it to fit the microbial species to the NMDS
+sp_fit <- envfit(nmds_species_h2_ch4, species_tx_h2_ch4_m, permutations = 9999)
+
+spp.scrs <- as.data.frame(scores(sp_fit, display = "vectors"))
+spp.scrs <- cbind(spp.scrs, Species = rownames(spp.scrs))
+
+# Extract significance values from envfit
+spp.scrs$significance <- sp_fit$vectors$pvals
+
+# Define a significance threshold
+p_value_threshold <- 0.01
+
+# Filter for significant species
+spp.scrs <- spp.scrs[spp.scrs$significance < p_value_threshold, ]
+
+# Sort spp.scrs by significance
+spp.scrs <- spp.scrs[order(spp.scrs$significance), ]
+
+# Subset to include only the top 25 species
+spp.scrs <- spp.scrs[1:25, ]
+
+# Scale the length of the vectors by -log10 of the p-value
+spp.scrs$NMDS1 <- spp.scrs$NMDS1 * -log10(spp.scrs$significance)
+spp.scrs$NMDS2 <- spp.scrs$NMDS2 * -log10(spp.scrs$significance)
+
+# Scale the length of the vectors by square of -log10 of the p-value
+# spp.scrs$NMDS1 <- spp.scrs$NMDS1 * (-log10(spp.scrs$significance))^2
+# spp.scrs$NMDS2 <- spp.scrs$NMDS2 * (-log10(spp.scrs$significance))^2
+
+# Scale the length of the vectors by square root of -log10 of the p-value
+# spp.scrs$NMDS1 <- spp.scrs$NMDS1 * sqrt(-log10(spp.scrs$significance))
+# spp.scrs$NMDS2 <- spp.scrs$NMDS2 * sqrt(-log10(spp.scrs$significance))
+
+ps <- ggplot(nmds_scores_species_h2_ch4, aes(x = NMDS1, y = NMDS2)) +
+  geom_point(aes(color = CH_to_H2, fill = CH_to_H2, shape = Diet), size = 3) +
+  scale_color_gradient(low = "blue", high = "red") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  scale_shape_discrete() +
+  coord_fixed() +
+  geom_segment(data = spp.scrs,
+               aes(x = 0, xend = NMDS1, y = 0, yend = NMDS2),
+               arrow = arrow(length = unit(0.25, "cm")), colour = "grey") +
+  geom_text(data = spp.scrs, aes(x = NMDS1, y = NMDS2, label = Species),
+            size = 3)
+# ps + facet_wrap(~Diet)
+ps
+
+```
